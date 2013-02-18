@@ -182,18 +182,26 @@ class MessagesDatabase(object):
         msgs = re.findall(' \x02\x00.([\x0A\x0D\x1B-\x7E]+)\x00\x80',
                           self.raw_data)
 
-    def get_received(self, who=''):
-        'returns a list of tuples in format (number, name, msg), ' \
-        'with option to filter to one person'
-        received_msgs_sets = []
-        for msgSet in re.findall(self.__received_msgs_pat, self.raw_data):
-            number, name, msg, time = msgSet
-            # gets an unsigned int (reversed) which is a Palm epoche
-            time = unpack(">I", time)[0]
-            if who not in name:
-                continue
-            received_msgs_sets.append(
-                (time - PALM_EPOCHE_CONV, number, name, msg))
+    def get_received(self, name=None, number=None, partial_name=None):
+        'get_received([name, [number, [partial_name]]]) -> list of Messages'
+        received = []
+        for message_data in re.findall(self._received_msgs_pat, self.raw_data):
+            # not at all sure about the times here; what is the third for?
+            (phone_number, address_name, _, msg, sent_time, received_time,
+                other_time) = message_data
+
+            if name is not None:
+                if address_name != name: continue
+            elif number is not None:
+                if phone_number != number: continue
+            elif partial_name is not None:
+                if partial_name not in address_name.lower(): continue
+
+            sent_time = palm_epoch_to_datetime(sent_time)
+            received_time = palm_epoch_to_datetime(received_time)
+            _from = self.get_contact(phone_number, address_name)
+            received.append(
+                Message(_from, self.owner, msg, sent_time, received_time))
 
         #mms
         # for msgSet in re.findall(received_mms_pat, self.raw_data):
@@ -201,7 +209,7 @@ class MessagesDatabase(object):
         #     if who:
         #         if who not in name: continue
         #     received_msgs_sets.append((number, name, msg))
-        return received_msgs_sets
+        return received
 
     def get_sent(self, name=None, number=None, partial_name=None):
         'get_sent([name, [number, [partial_name]]]) -> list of Messages'
@@ -216,7 +224,7 @@ class MessagesDatabase(object):
             elif number is not None:
                 if phone_number != number: continue
             elif partial_name is not None:
-                if partial_name not in address: continue
+                if partial_name not in address_name.lower(): continue
 
             sent_time = palm_epoch_to_datetime(sent_time)
             received_time = palm_epoch_to_datetime(received_time)
