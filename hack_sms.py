@@ -5,8 +5,9 @@ import os
 import sys
 import string
 import re
-import struct
+from struct import unpack
 from time import ctime
+from datetime import datetime
 from pprint import pprint
 
 '''
@@ -42,11 +43,8 @@ The purpose of this code is to extract information from the Palm SMS file
 Message_Database.pdb. This code is in-progress. I, the author, only have a
 Palm Treo 755p (previously 700p) from Verizon so have had limited data to
 test. The datasets I've been able to look at include texting both
-Verizon-to-Verizon and Verizon-to-Other.
-
-This specific file is for the SMS database, however I intend to have a more
-full set of tools which would also be able to deal with the phonebook,
-calendar, memos, and maybe even call history. ("maybe" because *I* don't care)
+Verizon-to-Verizon and Verizon-to-Other, which there seems to be a difference
+between.
 
 TODO:
   * refine sent message finding
@@ -59,8 +57,7 @@ TODO:
       _give_number_name() is a function for this which is called in
       get_phone_numbers() but it was written for something else so may
       need slight modification
-  * default messages database for mac needs some clean up
-  
+  * get_location on non-windows is specific to my machine (needs fix)
 
 NOTES:
   * currently, received texts can be pulled with sender & their
@@ -76,22 +73,43 @@ NOTES:
 PALM_EPOCHE_CONV = 2082844800
 
 class Message(object):
-    def __init__(self):
-        pass
+    def __init__(self, _from, to, msg, time_sent, time_received):
+        self._from = _from
+        self.to = to
+        self.msg = msg
+        self.time_sent = time_sent
+        self.time_received = time_received
+
+    def __str__(self):
+        return '{} ({}): {}'.format(self._from.name, self.time_sent, self.msg)
+
+class Contact(object):
+    def __init__(self, number, name=None):
+        self.number = number
+        self.name = name if name is not None else special_name(number)
+
+    def __repr__(self):
+        return 'Contact("{}", "{}")'.format(self.name, self.number)
+
+    def __eq__(self, other):
+        return (self.name == other or self.number == other
+            or self.name == other.name or self.number == other.number)
 
 class MessagesDatabase(object):
     'creates a Message_Database object'
     def __init__(self, location=None):
-        if location is None: self.location = get_location()
-        else: self.location = location
-        self.__make_raw_data()
-        self.__compile_re_patterns()
-        self.__make_owner_number()
+        self.location = location if location is not None else get_location()
 
-    def __make_raw_data(self):
-        f = open(self.location, 'rb')
-        self.raw_data = f.read()
-        f.close()
+        with open(self.location, 'rb') as f:
+            self.raw_data = f.read()
+
+        self.__compile_re_patterns()
+
+        try:
+            owner_num = re.findall(self.__owner_number_pat, self.raw_data)[0]
+            self.owner = Contact('Owner', owner_number)
+        except IndexError:
+            self.owner = Contact('Owner', '0'*10)
 
     def __compile_re_patterns(self):
         self.__owner_number_pat = '\x000\x03\x00\x0b([0-9]+)\x00'
@@ -120,28 +138,6 @@ class MessagesDatabase(object):
             'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
             )
 
-    def __make_owner_number(self):
-        try:
-            self.owner_number = \
-                re.findall(self.__owner_number_pat, self.raw_data)[0]
-        except:
-            self.owner_number = '0'*10
-
-    def _give_number_name(self, number):
-        'Gives more descriptive names for special numbers like for Twitter'
-        if '40404' == number: return 'Twitter'
-        elif '466453' == number: return 'Google'
-        elif '32665' == number: return 'Facebook'
-        elif '699268' == number: return 'Wamu'
-        elif '93557' == number: return 'Wells Fargo'
-        elif '246246' == number: return 'AIM Login'
-        elif number.startswith('265'): return 'AIM-%s' % number[-3:]
-        elif number.startswith('32665'): return 'Fbook-%s' % number[-3:]
-        elif number.startswith('46') and len(number) == 6:
-            return 'AIM-%s' % number[-4:]
-        elif number.startswith('0092466'): return 'YIM-%s' % number[-3:]
-        else: return number
-
     def get_phone_numbers(self):
         'returns list of (number, name) tuples, possibly with duplicates'
         #regular 10-digit (with area code) numbers
@@ -154,7 +150,7 @@ class MessagesDatabase(object):
             #if name field doesn't exist...
             if not special_num[-1]:
                 findings.extend((special_num[0],
-                                 self._give_number_name(special_num[0])))
+                                 specific_name(special_num[0])))
             #otherwise just pass it along, the user already has a name
             else: findings.extend(special_num)
         return findings
@@ -166,7 +162,7 @@ class MessagesDatabase(object):
         findings = self.get_phone_numbers()
         for finding in findings:
             number, name = finding
-            if number == self.owner_number: continue
+            if number == self.owner.number: continue
             #gets rid of dots and dashes in a phone number
             nameAndNumberSet = (name, re.sub('\.|\-', '', number))
             if nameAndNumberSet not in nameAndNumberSets:
@@ -186,7 +182,7 @@ class MessagesDatabase(object):
         for msgSet in re.findall(self.__received_msgs_pat, self.raw_data):
             number, name, msg, time = msgSet
             # gets an unsigned int (reversed) which is a Palm epoche
-            time = struct.unpack(">I", time)[0]
+            time = unpack(">I", time)[0]
             if who not in name:
                 continue
             received_msgs_sets.append(
@@ -200,34 +196,8 @@ class MessagesDatabase(object):
         #     received_msgs_sets.append((number, name, msg))
         return received_msgs_sets
 
-    def print_received_msgs(self, who=''):
-        'neatly prints received messages, with option to filter to one person'
-        received_msgs_sets = get_received(who)
-        if not received_msgs_sets:
-            print '%s is not in Messages Database' % who
-            return
-        for received_msg_set in received_msgs_sets:
-            number, name, msg = received_msg_set
-            print '%s   %s' % (number, name)
-            print '-' * (len(number+name)+3)
-            print msg
-            print
-
-    def print_received_msgs_individual(self, who):
-        'prints the name of the person, then all the messages'
-        received_msgs_sets = get_received(who)
-        if not received_msgs_sets:
-            print '%s is not in Messages Database' % who
-            return
-        number, name, first_msg = received_msgs_sets[0]
-        print '%s   %s' % (number, name)
-        print '-' * (len(number+name)+3)
-        for received_msg_set in received_msgs_sets:
-            print received_msg_set[-1]
-            print
-
-    def get_sent(self, who=None):
-        'get_sent([who]) -> (time, number, name, msg)'
+    def get_sent(self, name=None, number=None, partial_name=None):
+        'get_sent([who]) -> list of Messages'
         sent = []
 
         re.compile(
@@ -238,14 +208,14 @@ class MessagesDatabase(object):
         'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
         )
 
-        for message_set in re.findall(self.__sent_msgs_pat, self.raw_data):
+        for message_data in re.findall(self.__sent_msgs_pat, self.raw_data):
             if who is not None:
                 if message_set[3] != who:
                     continue
             sent_time, received_time, phone_number, address_name, _, msg = \
-                message_set
-            time = struct.unpack(">I", sent_time)[0]
-            sent.append((time-PALM_EPOCHE_CONV, phone_number, address_name, msg))
+                message_data
+            sent_time = palm_epoch_to_datetime(sent_time)
+            sent.append((time, phone_number, address_name, msg))
         return sent
 
     def get_outbox(self):
@@ -282,9 +252,9 @@ def get_location():
     'Try to find the Message_Database.pdb file path'
     #try cur dir first
     if os.path.isfile('Messages_Database.pdb'):
-        return 'Messages_Database.pdb'
-    elif os.path.isfile('Messages Database.pdb'):
-        return 'Messages Database.pdb'
+        return os.path.abspath('Messages_Database.pdb')
+    if os.path.isfile('Messages Database.pdb'):
+        return os.path.abspath('Messages Database.pdb')
 
     try:
         platform = os.uname()[0]
@@ -311,6 +281,24 @@ def get_location():
     elif platform == 'Linux':
         linux_file = '/home/micseydel/Treo/Messages Database.pdb'
         return linux_file if os.path.isfile(linux_file) else None
+
+def palm_epoch_to_datetime(time):
+    return datetime.fromtimestamp(unpack(">I", time)[0] - PALM_EPOCHE_CONV)
+
+def special_name(number):
+    'Gives more descriptive names for special numbers like for Twitter'
+    if '40404' == number: return 'Twitter'
+    elif '466453' == number: return 'Google'
+    elif '32665' == number: return 'Facebook'
+    elif '699268' == number: return 'Wamu'
+    elif '93557' == number: return 'Wells Fargo'
+    elif '246246' == number: return 'AIM Login'
+    elif number.startswith('265'): return 'AIM-%s' % number[-3:]
+    elif number.startswith('32665'): return 'Fbook-%s' % number[-3:]
+    elif number.startswith('46') and len(number) == 6:
+        return 'AIM-%s' % number[-4:]
+    elif number.startswith('0092466'): return 'YIM-%s' % number[-3:]
+    else: return number
 
 if __name__ == '__main__':
     db = MessagesDatabase(sys.argv[1])
