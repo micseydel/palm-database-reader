@@ -36,7 +36,7 @@ THE SOFTWARE.
 
 
 
-Last updated: 29 August 2010
+Last updated: 17 February 2013
 
 DESCRIPTION:
 The purpose of this code is to extract information from the Palm SMS file
@@ -76,6 +76,10 @@ NOTES:
 
 PALM_EPOCHE_CONV = 2082844800
 
+class Message(object):
+    def __init__(self):
+        pass
+
 class MessagesDatabase(object):
     'creates a Message_Database object'
     def __init__(self, location=None):
@@ -84,39 +88,6 @@ class MessagesDatabase(object):
         self.__make_raw_data()
         self.__compile_re_patterns()
         self.__make_owner_number()
-
-    def __getLocation(self):
-        #try cur dir first
-        if os.path.isfile('Messages_Database.pdb'):
-            return 'Messages_Database.pdb'
-        elif os.path.isfile('Messages Database.pdb'):
-            return 'Messages Database.pdb'
-
-        try:
-            platform = os.uname()[0]
-        except AttributeError:
-            platform = 'Windows'
-
-        if platform == 'Windows':
-            old_file = \
-                r'C:\Program Files\palm\TreoM\Backup\Messages_Database.pdb'
-            new_file = \
-                r'C:\Documents and Settings\%s' + os.environ['USERNAME'] + \
-                r'\My Documents\Palm OS Desktop\TreoM\Backup' \
-                '\Messages_Database.pdb'
-            if os.path.isfile(old_file):
-                return old_file
-            elif os.path.isfile(new_file):
-                return new_file
-
-        elif platform == 'Darwin':
-            mac_file = "/Users/micseydel/Documents/Palm/Users/" \
-                "Micseydel's Treo/Backups/Messages Database.pdb"
-            return mac_file if os.path.isfile(mac_file) else None
-
-        elif platform == 'Linux':
-            linux_file = '/home/micseydel/Treo/Messages Database.pdb'
-            return linux_file if os.path.isfile(linux_file) else None
 
     def __make_raw_data(self):
         f = open(self.location, 'rb')
@@ -135,12 +106,19 @@ class MessagesDatabase(object):
             '([0-9]{3}[\.|\-]?[0-9]{3}[\.|\-]?[0-9]{4})\x00'
             '([\x0A\x0D\x1B-\x7E]+).{34}(.)([\x0A\x0D\x1B-\x7E]+)\x00 \x08')
 
+        # self.__sent_msgs_pat = re.compile(
+        #     # specific to my number \x00\x07  \x00\x06 receiver's number
+        #     '9250\x00\x80\x00(.{4})\x00..{4}\x00..{4}.{4}\x00{18}.{2}'
+        #     '([0-9]{3}[\.|\-]?[0-9]{3}[\.|\-]?[0-9]{4})\x00'
+        #     '([\x0A\x0D\x1B-\x7E]+)\x00{10}\x1bTrsm .{3}'
+        #     '([\x0A\x0D\x1B-\x7E]+)\x00'
+        #     )
         self.__sent_msgs_pat = re.compile(
-            # specific to my number \x00\x07  \x00\x06 receiver's number
-            '9250\x00\x80\x00(.{4})\x00..{4}\x00..{4}.{4}\x00{18}.{2}'
-            '([0-9]{3}[\.|\-]?[0-9]{3}[\.|\-]?[0-9]{4})\x00'
-            '([\x0A\x0D\x1B-\x7E]+)\x00{10}\x1bTrsm .{3}'
-            '([\x0A\x0D\x1B-\x7E]+)\x00'
+            '(.{4})...{4}.{12}' # sent time
+            '(.{4}).{8}' # received time
+            '(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
+            '([\x0A\x0D\x1B-\x7E]+?).{11}' # name in address book
+            'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
             )
 
     def __make_owner_number(self):
@@ -206,21 +184,21 @@ class MessagesDatabase(object):
         'returns a list of tuples in format (number, name, msg), ' \
         'with option to filter to one person'
         received_msgs_sets = []
-        for msgSet in re.findall(receivedMsgsPat, self.raw_data):
+        for msgSet in re.findall(self.__received_msgs_pat, self.raw_data):
             number, name, msg, time = msgSet
             # gets an unsigned int (reversed) which is a Palm epoche
             time = struct.unpack(">I", time)[0]
-            if who:
-                if who not in name: continue
+            if who not in name:
+                continue
             received_msgs_sets.append(
                 (time - PALM_EPOCHE_CONV, number, name, msg))
 
         #mms
-        for msgSet in re.findall(received_mms_pat, self.raw_data):
-            number, name, msg = msgSet
-            if who:
-                if who not in name: continue
-            received_msgs_sets.append((number, name, msg))
+        # for msgSet in re.findall(received_mms_pat, self.raw_data):
+        #     number, name, msg = msgSet
+        #     if who:
+        #         if who not in name: continue
+        #     received_msgs_sets.append((number, name, msg))
         return received_msgs_sets
 
     def print_received_msgs(self, who=''):
@@ -252,11 +230,21 @@ class MessagesDatabase(object):
     def get_sent(self, who=None):
         'get_sent([who]) -> (time, number, name, msg)'
         sent = []
-        for message_set in re.findall(sent_msgs_pat, self.raw_data):
-            if who:
-                if message_set[2] != who:
+
+        re.compile(
+        '(.{4})...{4}.{12}' # sent time
+        '(.{4}).{8}' # received time
+        '(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
+        '([\x0A\x0D\x1B-\x7E]+?).{11}' # name in address book
+        'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
+        )
+
+        for message_set in re.findall(self.__sent_msgs_pat, self.raw_data):
+            if who is not None:
+                if message_set[3] != who:
                     continue
-            time, number, name, msg = message_set
+            sent_time, received_time, phone_number, address_name, _, msg = \
+                message_set
             time = struct.unpack(">I", time)[0]
             sent.append((time-PALM_EPOCHE_CONV, number, name, msg))
         return sent
@@ -291,185 +279,39 @@ class MessagesDatabase(object):
             saved.append((msg[1], msg[2], msg[0],))
         return saved
 
-######################END CLASS###################
+def get_location():
+    'Try to find the Message_Database.pdb file path'
+    #try cur dir first
+    if os.path.isfile('Messages_Database.pdb'):
+        return 'Messages_Database.pdb'
+    elif os.path.isfile('Messages Database.pdb'):
+        return 'Messages Database.pdb'
 
-def test():
-    print 'Loading database...\n'
-    file = 'Messages_Database_mmsAndTemplates.pdb'
-#    file = selectFileFromFolder('oliverFunny', 'pdb')
-    print 'Using %s' % os.path.split(file)[-1]
-    msgs_db = MessagesDatabase(file)
+    try:
+        platform = os.uname()[0]
+    except AttributeError:
+        platform = 'Windows'
 
-    print 'Printing content\n'
-    
-    sent = msgs_db.get_sent()
-    print 'Sent messages (%i):' % len(sent)
-    if sent:
-        for msg in sent:
-            print '  %s\n    %s\n' % msg[1:]
-    else: print '  None\n'
+    if platform == 'Windows':
+        old_file = \
+            r'C:\Program Files\palm\TreoM\Backup\Messages_Database.pdb'
+        new_file = \
+            r'C:\Documents and Settings\%s' + os.environ['USERNAME'] + \
+            r'\My Documents\Palm OS Desktop\TreoM\Backup' \
+            '\Messages_Database.pdb'
+        if os.path.isfile(old_file):
+            return old_file
+        elif os.path.isfile(new_file):
+            return new_file
 
-    recvd = msgs_db.get_received()
-    print 'Received messages (%i):' % len(recvd)
-    if recvd:
-        for msg in recvd:
-            print '  %s\n    %s\n' % msg[1:]
-    else: print '  None\n'
+    elif platform == 'Darwin':
+        mac_file = "/Users/micseydel/Documents/Palm/Users/" \
+            "Micseydel's Treo/Backups/Messages Database.pdb"
+        return mac_file if os.path.isfile(mac_file) else None
 
-    drafts = msgs_db.get_drafts()
-    print 'Drafts (%i):' % len(drafts)
-    if drafts:
-        for msg in drafts:
-            print '  %s\n    %s\n' % msg[1:]
-    else: print '  None\n'
-
-    outbox = msgs_db.get_outbox()
-    print 'Outbox (%i):' % len(outbox)
-    if outbox:
-        for msg in outbox:
-            print '  %s\n    %s\n' % msg[1:]
-    else: print '  None\n'
-
-    saved = msgs_db.get_saved()
-    print 'Saved (%i):' % len(saved)
-    if saved:
-        for msg in saved:
-            print '  %s\n    %s\n' % msg[1:]
-    else: print '  None\n'
-
-def get_long_at_position(filename, pos):
-    f = open(filename)
-    f.seek(pos)
-    needed_bytes = list(f.read(4))
-    f.close()
-    needed_bytes.reverse()
-    return struct.unpack("L", ''.join(needed_bytes))[0]
-
-def get_mod_date(filename):
-    'assumes that the following link is accurate' \
-    'http://www.mactech.com/articles/mactech/Vol.21/21.08/PDBFile/index.html'
-    seconds = get_long_at_position(filename, 0x28)
-    return ctime(seconds)
-
-def brief_test():
-    database = Messages_Database('Messages_Database_noPics.pdb')
-    msgs = []
-    msgs.extend(database.get_received())
-    msgs.extend(
-        map(lambda x: x[:2] + ("Michael Seydel",) + (x[-1],),
-            database.get_sent())
-        )
-    msgs.sort()
-    for msg in msgs:
-        try:
-            time, number, name, content = msg
-            print '%s (%s):\n\t%s\n\n' % (name, ctime(time), content)
-        except ValueError: # this happened with an MMS
-            print '-'*40
-            print msg
-            print '-'*40
-            continue
-
-def get_consecutive_empties(lst):
-    numbers = []
-    so_far = 0
-    for element in lst:
-        if element:
-            numbers.append(so_far)
-            so_far = 0
-        else:
-            so_far += 1
-    numbers.append(so_far)
-    return numbers
-
-def check_nulls():
-    import matplotlib.pyplot as plot
-    database = Messages_Database('Messages_Database_noPics.pdb')
-    #experimenting with the number of consecutive empty strings gained by this
-    parts = database.raw_data[43000:].split('\0')
-    list_of_numbers = get_consecutive_empties(parts)
-    plot.plot(list_of_numbers)
-#    plot.savefig("test.png")
-    plot.show()
-
-def find_int(filename, num, offset=0, bytes_to_check=0, tolerance=0):
-    f = open(filename, 'rb')
-    f.seek(offset)
-    chars = list(f.read(bytes_to_check)) if bytes_to_check else list(f.read())
-    f.close()
-
-    curr = [chars.pop(0) for x in xrange(4)]
-    while chars:
-        thisNum = struct.unpack(">I", ''.join(curr))[0]
-        if thisNum >= num - tolerance and thisNum <= num + tolerance:
-            print '%02X %02X %02X %02X' % tuple(ord(char) for char in curr),
-            print '(%s)) @' % thisNum, offset, ctime(thisNum-PALM_EPOCHE_CONV)
-        curr.pop(0)
-        curr.append(chars.pop(0))
-        offset += 1
-
-def find_short(filename, number, offset=0, bytes_to_check=0, tolerance=0):
-    f = open(filename, 'rb')
-    f.seek(offset)
-    chars = list(f.read(bytes_to_check)) if bytes_to_check else list(f.read())
-    f.close()
-
-    curr = [chars.pop(0) for x in xrange(2)]
-    while chars:
-        thisNum = struct.unpack(">H", ''.join(curr))[0]
-        if thisNum >= number - tolerance and thisNum <= number + tolerance:
-            print '%02X %02X' % tuple(ord(char) for char in curr),
-        curr.pop(0)
-        curr.append(chars.pop(0))
-        offset += 1
+    elif platform == 'Linux':
+        linux_file = '/home/micseydel/Treo/Messages Database.pdb'
+        return linux_file if os.path.isfile(linux_file) else None
 
 if __name__ == '__main__':
     db = MessagesDatabase(sys.argv[1])
-    vzn_sent_pat = re.compile(
-        #'Trsm.{12}'
-        '(.{4}).{8}' # time
-        '(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
-        '([\x0A\x0D\x1B-\x7E]+?).{13}' # name in address book
-        '3107209250.{5}Michael Seydel \(M\).{4}'
-        '(.)([\x0A\x0D\x1B-\x7E]+?)\0') # message length, and message
-#    for found in vzn_sent_pat.findall(db.raw_data):
-#        print found
-#        print
-
-    other_sent_pat = re.compile(
-        '(.{4})...{4}.{12}' # sent time
-        '(.{4}).{8}' # received time
-        '(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
-        '([\x0A\x0D\x1B-\x7E]+?).{11}' # name in address book
-        'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
-        )
-
-    other_recvd_pat = re.compile(
-        '\0(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
-        '([\x0A\x0D\x1B-\x7E]+?)\0.{10}' # name in address book
-        '(.{2})([\x0A\x0D\x1B-\x7E]+?)' # message length, and message
-        '\0.\0'
-        '(.{4}).{2}(.{4}).{2}(.{4})\0', #times
-        )
-
-    msgs = []
-    for msg in re.findall(other_sent_pat, db.raw_data):
-        sent, received, phone_number, name, msg_len, msg_content = msg
-        msgs.append(
-            (struct.unpack('>I', sent)[0] - PALM_EPOCHE_CONV,
-             '>'+name, msg_content)
-        )
-    for msg in re.findall(other_recvd_pat, db.raw_data):
-        num, name, msg_len, content, t1, t2, t3 = msg
-        msgs.append(
-            (struct.unpack('>I', t1)[0]-PALM_EPOCHE_CONV, '<'+name, content)
-            )
-    msgs.sort()
-    for msg in msgs:
-        time, name, content = msg
-        print name, '(%s):' % ctime(time)
-        print '\t', content
-        print
-
-# this looks like it works well except for my originally sent message
-#http://www.mactech.com/articles/mactech/Vol.21/21.08/PDBFile/index.html
