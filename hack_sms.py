@@ -10,7 +10,7 @@ from time import ctime
 from pprint import pprint
 
 '''
-Copyright (c) 2010 Michael Seydel <micseydel@gmail.com>
+Copyright (c) 2013 Michael Seydel <micseydel@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -33,7 +33,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
-
 
 
 Last updated: 17 February 2013
@@ -83,7 +82,7 @@ class Message(object):
 class MessagesDatabase(object):
     'creates a Message_Database object'
     def __init__(self, location=None):
-        if location is None: self.location = self.__getLocation()
+        if location is None: self.location = get_location()
         else: self.location = location
         self.__make_raw_data()
         self.__compile_re_patterns()
@@ -245,8 +244,8 @@ class MessagesDatabase(object):
                     continue
             sent_time, received_time, phone_number, address_name, _, msg = \
                 message_set
-            time = struct.unpack(">I", time)[0]
-            sent.append((time-PALM_EPOCHE_CONV, number, name, msg))
+            time = struct.unpack(">I", sent_time)[0]
+            sent.append((time-PALM_EPOCHE_CONV, phone_number, address_name, msg))
         return sent
 
     def get_outbox(self):
