@@ -6,9 +6,7 @@ import sys
 import string
 import re
 from struct import unpack
-from time import ctime
 from datetime import datetime
-from pprint import pprint
 
 '''
 Copyright (c) 2013 Michael Seydel <micseydel@gmail.com>
@@ -45,6 +43,8 @@ Palm Treo 755p (previously 700p) from Verizon so have had limited data to
 test. The datasets I've been able to look at include texting both
 Verizon-to-Verizon and Verizon-to-Other, which there seems to be a difference
 between.
+Best source of documentation I've found is
+http://www.mactech.com/articles/mactech/Vol.21/21.08/PDBFile/index.html
 
 TODO:
   * refine sent message finding
@@ -106,37 +106,44 @@ class MessagesDatabase(object):
         self.__compile_re_patterns()
 
         try:
-            owner_num = re.findall(self.__owner_number_pat, self.raw_data)[0]
+            owner_num = re.findall(self._owner_number_pat, self.raw_data)[0]
             self.owner = Contact('Owner', owner_number)
         except IndexError:
             self.owner = Contact('Owner', '0'*10)
 
-    def __compile_re_patterns(self):
-        self.__owner_number_pat = '\x000\x03\x00\x0b([0-9]+)\x00'
-        self.__received_msgs_pat = re.compile(
-            '([0-9]{3}[\.|\-]?[0-9]{3}[\.|\-]?[0-9]{4})' # phone number
-            '\x00([\x0A\x0D\x1B-\x7E]+)?' # person
-            '\x00{9} \x02\x00.([\x0A\x0D\x1B-\x7E]+)' # message
-            '\x00\x80\x00(.{4})\x00') # time
+        # {phone_number: Contact}
+        self.contacts = {}
 
-        self.__received_mms_pat = re.compile(
+    def __compile_re_patterns(self):
+        self._owner_number_pat = '\x000\x03\x00\x0b([0-9]+)\x00'
+        self._received_pat = re.compile(
+            '\0(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
+            '([\x0A\x0D\x1B-\x7E]+?)\0.{10}' # name in address book
+            '(.{2})([\x0A\x0D\x1B-\x7E]+?)' # message length, and message
+            '\0.\0'
+            '(.{4}).{2}(.{4}).{2}(.{4})\0', #times
+            )
+
+        self._received_mms_pat = re.compile(
             '([0-9]{3}[\.|\-]?[0-9]{3}[\.|\-]?[0-9]{4})\x00'
             '([\x0A\x0D\x1B-\x7E]+).{34}(.)([\x0A\x0D\x1B-\x7E]+)\x00 \x08')
 
-        # self.__sent_msgs_pat = re.compile(
-        #     # specific to my number \x00\x07  \x00\x06 receiver's number
-        #     '9250\x00\x80\x00(.{4})\x00..{4}\x00..{4}.{4}\x00{18}.{2}'
-        #     '([0-9]{3}[\.|\-]?[0-9]{3}[\.|\-]?[0-9]{4})\x00'
-        #     '([\x0A\x0D\x1B-\x7E]+)\x00{10}\x1bTrsm .{3}'
-        #     '([\x0A\x0D\x1B-\x7E]+)\x00'
-        #     )
-        self.__sent_msgs_pat = re.compile(
+        self.__sent_pat = re.compile(
             '(.{4})...{4}.{12}' # sent time
             '(.{4}).{8}' # received time
             '(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
             '([\x0A\x0D\x1B-\x7E]+?).{11}' # name in address book
             'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
             )
+
+    def get_contact(self, number, name=None):
+        'Get a Contact; if they do not exist, creates'
+        if number in self.contacts:
+            return self.contacts[number]
+
+        contact = Contact(number, name)
+        self.contacts[number] = contact
+        return contact
 
     def get_phone_numbers(self):
         'returns list of (number, name) tuples, possibly with duplicates'
@@ -197,25 +204,25 @@ class MessagesDatabase(object):
         return received_msgs_sets
 
     def get_sent(self, name=None, number=None, partial_name=None):
-        'get_sent([who]) -> list of Messages'
+        'get_sent([name, [number, [partial_name]]]) -> list of Messages'
         sent = []
 
-        re.compile(
-        '(.{4})...{4}.{12}' # sent time
-        '(.{4}).{8}' # received time
-        '(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
-        '([\x0A\x0D\x1B-\x7E]+?).{11}' # name in address book
-        'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
-        )
-
-        for message_data in re.findall(self.__sent_msgs_pat, self.raw_data):
-            if who is not None:
-                if message_set[3] != who:
-                    continue
+        for message_data in re.findall(self.__sent_pat, self.raw_data):
             sent_time, received_time, phone_number, address_name, _, msg = \
                 message_data
+
+            if name is not None:
+                if address_name != name: continue
+            elif number is not None:
+                if phone_number != number: continue
+            elif partial_name is not None:
+                if partial_name not in address: continue
+
             sent_time = palm_epoch_to_datetime(sent_time)
-            sent.append((time, phone_number, address_name, msg))
+            received_time = palm_epoch_to_datetime(received_time)
+            to = self.get_contact(phone_number, address_name)
+            sent.append(Message(self.owner, to, msg, sent_time, received_time))
+
         return sent
 
     def get_outbox(self):

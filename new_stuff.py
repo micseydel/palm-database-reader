@@ -50,6 +50,3 @@ def main():
         print name, '(%s):' % ctime(time)
         print '\t', content
         print
-
-# this looks like it works well except for my originally sent message
-#http://www.mactech.com/articles/mactech/Vol.21/21.08/PDBFile/index.html
