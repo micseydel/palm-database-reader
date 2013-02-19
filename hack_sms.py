@@ -58,6 +58,7 @@ TODO:
       get_phone_numbers() but it was written for something else so may
       need slight modification
   * get_location on non-windows is specific to my machine (needs fix)
+  * Contact should be able to hold multiple numbers
 
 NOTES:
   * currently, received texts can be pulled with sender & their
@@ -80,6 +81,15 @@ class Message(object):
         self.time_sent = time_sent
         self.time_received = time_received
 
+    def __eq__(self, other):
+        return (self.sender == other.sender and self.receiver == other.receiver
+            and self.msg == other.msg and self.time_sent == other.time_sent
+            and self.time_received == other.time_received)
+
+    def __hash__(self):
+        return hash('{}{}{}'.format(self.sender, self.receiver, self.msg)) + \
+            hash(self.time_sent) + hash(self.time_received)
+
     def __str__(self):
         return '{} ({}): {}'.format(self.sender.name, self.time_sent, self.msg)
 
@@ -89,10 +99,16 @@ class Message(object):
     def __gt__(self, other):
         return self.time_sent > other.time_sent
 
+    def __contains__(self, string):
+        return string in self.msg
+
 class Contact(object):
     def __init__(self, number, name=None):
         self.number = number
         self.name = name if name is not None else special_name(number)
+
+    def __hash__(self):
+        return hash(self.number + self.name)
 
     def __str__(self):
         return '{} ({})'.format(self.name, self.number)
