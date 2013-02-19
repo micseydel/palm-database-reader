@@ -7,6 +7,7 @@ import ctypes as c
 PALM_EPOCHE_CONV = 2082844800
 
 def get_c_string(fileobj):
+    'gets a C string from a fileobj, advancing the position'
     chars = []
     while True: # break when \0 encountered
         char = fileobj.read(1)

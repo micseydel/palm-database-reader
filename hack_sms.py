@@ -82,6 +82,7 @@ class Message(object):
         self.time_received = time_received
 
     def __eq__(self, other):
+        'Messages considered equal when all fields are equal'
         return (self.sender == other.sender and self.receiver == other.receiver
             and self.msg == other.msg and self.time_sent == other.time_sent
             and self.time_received == other.time_received)
@@ -91,6 +92,7 @@ class Message(object):
             hash(self.time_sent) + hash(self.time_received)
 
     def __str__(self):
+        '<sender> (<time>): <msg>'
         return '{} ({}): {}'.format(self.sender.name, self.time_sent, self.msg)
 
     def __lt__(self, other):
