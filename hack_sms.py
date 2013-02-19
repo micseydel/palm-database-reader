@@ -73,20 +73,29 @@ NOTES:
 PALM_EPOCHE_CONV = 2082844800
 
 class Message(object):
-    def __init__(self, _from, to, msg, time_sent, time_received):
-        self._from = _from
-        self.to = to
+    def __init__(self, sender, receiver, msg, time_sent, time_received):
+        self.sender = sender
+        self.receiver = receiver
         self.msg = msg
         self.time_sent = time_sent
         self.time_received = time_received
 
     def __str__(self):
-        return '{} ({}): {}'.format(self._from.name, self.time_sent, self.msg)
+        return '{} ({}): {}'.format(self.sender.name, self.time_sent, self.msg)
+
+    def __lt__(self, other):
+        return self.time_sent < other.time_sent
+
+    def __gt__(self, other):
+        return self.time_sent > other.time_sent
 
 class Contact(object):
     def __init__(self, number, name=None):
         self.number = number
         self.name = name if name is not None else special_name(number)
+
+    def __str__(self):
+        return '{} ({})'.format(self.name, self.number)
 
     def __repr__(self):
         return 'Contact("{}", "{}")'.format(self.name, self.number)
@@ -107,7 +116,7 @@ class MessagesDatabase(object):
 
         try:
             owner_num = re.findall(self._owner_number_pat, self.raw_data)[0]
-            self.owner = Contact('Owner', owner_number)
+            self.owner = Contact('Owner', owner_num)
         except IndexError:
             self.owner = Contact('Owner', '0'*10)
 
@@ -185,7 +194,7 @@ class MessagesDatabase(object):
     def get_received(self, name=None, number=None, partial_name=None):
         'get_received([name, [number, [partial_name]]]) -> list of Messages'
         received = []
-        for message_data in re.findall(self._received_msgs_pat, self.raw_data):
+        for message_data in re.findall(self._received_pat, self.raw_data):
             # not at all sure about the times here; what is the third for?
             (phone_number, address_name, _, msg, sent_time, received_time,
                 other_time) = message_data

@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
-import ctypes as c
+import sys
 import struct
-from time import ctime
+import ctypes as c
 
 PALM_EPOCHE_CONV = 2082844800
 
@@ -23,7 +23,7 @@ class PalmDB(object):
             self.header = PDBHeader(f.read(0x4e))
             self.record_list = [PDBRecordHeader(f.read(8))
                 for x in xrange(self.header.num_records)]
-            f.read(2) #filler crap
+            f.read(2) #no idea what this is
             self.records = self._get_records(f)
 
     def _get_records(self, file_object):
@@ -120,4 +120,4 @@ class PDBRecord(object):
         vars(self).update(locals())
 
 if __name__ == "__main__":
-    PalmDB = PalmDB("lots.pdb")
+    palm_db = PalmDB(sys.argv[1])
