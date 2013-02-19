@@ -4,7 +4,7 @@ import re
 from hack_sms import MessagesDatabase
 
 def test():
-	db = MessagesDatabase(sys.argv[1])
+    db = MessagesDatabase(sys.argv[1])
     vzn_sent_pat = re.compile(
         #'Trsm.{12}'
         '(.{4}).{8}' # time
@@ -52,8 +52,7 @@ def test():
         print
 
 def main():
-	db = MessagesDatabase(sys.argv[1])
-	msgs = db.get_sent(partial_name='farhana') + 
+    db = MessagesDatabase(sys.argv[1])
 
 if __name__ == '__main__':
-	main()
+    main()

@@ -118,7 +118,7 @@ def find_int(filename, num, offset=0, bytes_to_check=0, tolerance=0):
 def find_short(filename, number, offset=0, bytes_to_check=0, tolerance=0):
     f = open(filename, 'rb')
     f.seek(offset)
-    chars = list(f.read(bytes_to_check)) if bytes_to_check else list(f.read())
+    chars = list(f.read(bytes_to_check) if bytes_to_check else f.read())
     f.close()
 
     curr = [chars.pop(0) for x in xrange(2)]
