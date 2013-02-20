@@ -36,39 +36,8 @@ THE SOFTWARE.
 
 Last updated: 17 February 2013
 
-DESCRIPTION:
-The purpose of this code is to extract information from the Palm SMS file
-Message_Database.pdb. This code is in-progress. I, the author, only have a
-Palm Treo 755p (previously 700p) from Verizon so have had limited data to
-test. The datasets I've been able to look at include texting both
-Verizon-to-Verizon and Verizon-to-Other, which there seems to be a difference
-between.
 Best source of documentation I've found is
 http://www.mactech.com/articles/mactech/Vol.21/21.08/PDBFile/index.html
-
-TODO:
-  * refine sent message finding
-  * find drafts pattern
-  * re patterns for phone numbers need to be improved
-    * phone numbers of different lengths, w/ and w/o dashes or dots
-  * for the special numbers, this program should identify known
-      numbers such as Twitter, Facebook, AIM, etc. rather than
-      labelling them as their phone number. this is low priority.
-      _give_number_name() is a function for this which is called in
-      get_phone_numbers() but it was written for something else so may
-      need slight modification
-  * get_location on non-windows is specific to my machine (needs fix)
-  * Contact should be able to hold multiple numbers
-
-NOTES:
-  * currently, received texts can be pulled with sender & their
-      phone number, as well as most sent messages
-  * date/time somewhat retrievable
-  * my phone will only show up to 200 messages for an individual - this does
-  not mean that it is not in the record, and this should be checked out
-  * when using get_sent() I found that the most recent sent weren't caught
-  * Trsm = "Treo Sent Message"?
-
 '''
 
 PALM_EPOCHE_CONV = 2082844800
@@ -105,12 +74,22 @@ class Message(object):
         return string in self.msg
 
 class Contact(object):
-    def __init__(self, number, name=None):
+    contacts = {}
+    def __new__(cls, number, name=None):
+        if number in cls.contacts:
+            contact = cls.contacts[number]
+            # not sure what to do with this right now
+            if contact.name != name:
+                print contact.name, '!=', name
+                raise
+        else:
+            contact = object.__new__(cls, number, name)
+            cls.contacts[number] = contact
+        return contact
+
+    def __init__(self, number, name):
         self.number = number
         self.name = name if name is not None else special_name(number)
-
-    def __hash__(self):
-        return hash(self.number + self.name)
 
     def __str__(self):
         return '{} ({})'.format(self.name, self.number)
@@ -119,8 +98,9 @@ class Contact(object):
         return 'Contact("{}", "{}")'.format(self.name, self.number)
 
     def __eq__(self, other):
-        return (self.name == other or self.number == other
-            or self.name == other.name or self.number == other.number)
+        'Returns True if they are the same contact, or for comparison to ' \
+        'string when a name or number'
+        return other is self or self.number == other or self.name == other
 
 class MessagesDatabase(object):
     'creates a Message_Database object'
@@ -134,12 +114,9 @@ class MessagesDatabase(object):
 
         try:
             owner_num = re.findall(self._owner_number_pat, self.raw_data)[0]
-            self.owner = Contact('Owner', owner_num)
+            self.owner = Contact(owner_num, 'Owner')
         except IndexError:
-            self.owner = Contact('Owner', '0'*10)
-
-        # {phone_number: Contact}
-        self.contacts = {}
+            self.owner = Contact('0'*10, 'Owner')
 
     def __compile_re_patterns(self):
         self._owner_number_pat = '\x000\x03\x00\x0b([0-9]+)\x00'
@@ -162,15 +139,6 @@ class MessagesDatabase(object):
             '([\x0A\x0D\x1B-\x7E]+?).{11}' # name in address book
             'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
             )
-
-    def get_contact(self, number, name=None):
-        'Get a Contact; if they do not exist, creates'
-        if number in self.contacts:
-            return self.contacts[number]
-
-        contact = Contact(number, name)
-        self.contacts[number] = contact
-        return contact
 
     def get_phone_numbers(self):
         'returns list of (number, name) tuples, possibly with duplicates'
@@ -226,7 +194,7 @@ class MessagesDatabase(object):
 
             sent_time = palm_epoch_to_datetime(sent_time)
             received_time = palm_epoch_to_datetime(received_time)
-            _from = self.get_contact(phone_number, address_name)
+            _from = Contact(phone_number, address_name)
             received.append(
                 Message(_from, self.owner, msg, sent_time, received_time))
 
@@ -255,7 +223,7 @@ class MessagesDatabase(object):
 
             sent_time = palm_epoch_to_datetime(sent_time)
             received_time = palm_epoch_to_datetime(received_time)
-            to = self.get_contact(phone_number, address_name)
+            to = Contact(phone_number, address_name)
             sent.append(Message(self.owner, to, msg, sent_time, received_time))
 
         return sent
