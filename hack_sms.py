@@ -59,9 +59,6 @@ class Message(object):
                 in ('sender', 'receiver', 'msg', 'time_sent', 'time_received'))
         except AttributeError:
             return False
-        # return (self.sender == other.sender and self.receiver == other.receiver
-        #     and self.msg == other.msg and self.time_sent == other.time_sent
-        #     and self.time_received == other.time_received)
 
     def __hash__(self):
         return hash('{}{}{}'.format(self.sender, self.receiver, self.msg)) + \
@@ -96,10 +93,10 @@ class MessagesDatabase(object):
         except IndexError:
             self.owner = Contact('0'*10, 'Owner')
 
-    def __compile_re_patterns(self):
+    def _compile_re_patterns(self):
         self._owner_number_pat = '\x000\x03\x00\x0b([0-9]+)\x00'
         self._received_pat = re.compile(
-            '\0(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
+            '\0(1?\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
             '([\x0A\x0D\x1B-\x7E]+?)\0.{10}' # name in address book
             '(.{2})([\x0A\x0D\x1B-\x7E]+?)' # message length, and message
             '\0.\0'
@@ -113,7 +110,7 @@ class MessagesDatabase(object):
         self.__sent_pat = re.compile(
             '(.{4})...{4}.{12}' # sent time
             '(.{4}).{8}' # received time
-            '(\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
+            '(1?\d{3}[\.|\-]?\d{3}[\.|\-]?\d{4})\0' # phone number
             '([\x0A\x0D\x1B-\x7E]+?).{11}' # name in address book
             'Trsm.{2}(.{2})([\x0A\x0D\x1B-\x7E]+?)\0' # message length, & message
             )
