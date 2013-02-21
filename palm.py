@@ -6,16 +6,6 @@ import ctypes as c
 
 PALM_EPOCHE_CONV = 2082844800
 
-def get_c_string(fileobj):
-    'gets a C string from a fileobj, advancing the position'
-    chars = []
-    while True: # break when \0 encountered
-        char = fileobj.read(1)
-        if char == '\0':
-            break
-        chars.append(char)
-    return "".join(chars)
-
 class PalmDB(object):
     "An entire Palm Database; a file"
     def __init__(self, filename):
@@ -118,7 +108,18 @@ class PDBRecord(object):
                 name = get_c_string(f)
             f.read(17) # might be useful here
 
+        del f
         vars(self).update(locals())
+
+def get_c_string(fileobj):
+    'gets a C string from a fileobj, advancing the position'
+    chars = []
+    while True: # break when \0 encountered
+        char = fileobj.read(1)
+        if char == '\0':
+            break
+        chars.append(char)
+    return "".join(chars)
 
 if __name__ == "__main__":
     palm_db = PalmDB(sys.argv[1])

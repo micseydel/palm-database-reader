@@ -63,7 +63,7 @@ def brief_test():
     msgs = []
     msgs.extend(database.get_received())
     msgs.extend(
-        map(lambda x: x[:2] + ("Michael Seydel",) + (x[-1],),
+        map(lambda x: x[:2] + ("Michael Seydel",) + x[-1:],
             database.get_sent())
         )
     msgs.sort()

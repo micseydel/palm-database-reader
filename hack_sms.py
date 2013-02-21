@@ -8,6 +8,8 @@ import re
 from struct import unpack
 from datetime import datetime
 
+from contact import Contact
+
 '''
 Copyright (c) 2013 Michael Seydel <micseydel@gmail.com>
 
@@ -52,9 +54,14 @@ class Message(object):
 
     def __eq__(self, other):
         'Messages considered equal when all fields are equal'
-        return (self.sender == other.sender and self.receiver == other.receiver
-            and self.msg == other.msg and self.time_sent == other.time_sent
-            and self.time_received == other.time_received)
+        try:
+            return all(getattr(self, field) == getattr(other, field) for field
+                in ('sender', 'receiver', 'msg', 'time_sent', 'time_received'))
+        except AttributeError:
+            return False
+        # return (self.sender == other.sender and self.receiver == other.receiver
+        #     and self.msg == other.msg and self.time_sent == other.time_sent
+        #     and self.time_received == other.time_received)
 
     def __hash__(self):
         return hash('{}{}{}'.format(self.sender, self.receiver, self.msg)) + \
@@ -73,44 +80,15 @@ class Message(object):
     def __contains__(self, string):
         return string in self.msg
 
-class Contact(object):
-    contacts = {}
-    def __new__(cls, number, name=None):
-        if number in cls.contacts:
-            contact = cls.contacts[number]
-            # not sure what to do with this right now
-            if contact.name != name:
-                print contact.name, '!=', name
-                raise
-        else:
-            contact = object.__new__(cls, number, name)
-            cls.contacts[number] = contact
-        return contact
-
-    def __init__(self, number, name):
-        self.number = number
-        self.name = name if name is not None else special_name(number)
-
-    def __str__(self):
-        return '{} ({})'.format(self.name, self.number)
-
-    def __repr__(self):
-        return 'Contact("{}", "{}")'.format(self.name, self.number)
-
-    def __eq__(self, other):
-        'Returns True if they are the same contact, or for comparison to ' \
-        'string when a name or number'
-        return other is self or self.number == other or self.name == other
-
 class MessagesDatabase(object):
-    'creates a Message_Database object'
+    'creates a MessageDatabase object'
     def __init__(self, location=None):
         self.location = location if location is not None else get_location()
 
         with open(self.location, 'rb') as f:
             self.raw_data = f.read()
 
-        self.__compile_re_patterns()
+        self._compile_re_patterns()
 
         try:
             owner_num = re.findall(self._owner_number_pat, self.raw_data)[0]
@@ -178,7 +156,8 @@ class MessagesDatabase(object):
                           self.raw_data)
 
     def get_received(self, name=None, number=None, partial_name=None):
-        'get_received([name, [number, [partial_name]]]) -> list of Messages'
+        '''get_received([name, [number, [partial_name]]]) -> list of Messages
+        number is a string, and partial_name is expected to be lowercase'''
         received = []
         for message_data in re.findall(self._received_pat, self.raw_data):
             # not at all sure about the times here; what is the third for?
@@ -195,8 +174,9 @@ class MessagesDatabase(object):
             sent_time = palm_epoch_to_datetime(sent_time)
             received_time = palm_epoch_to_datetime(received_time)
             _from = Contact(phone_number, address_name)
-            received.append(
-                Message(_from, self.owner, msg, sent_time, received_time))
+            msg = Message(_from, self.owner, msg, sent_time, received_time)
+            msg.other_time = palm_epoch_to_datetime(other_time)
+            received.append(msg)
 
         #mms
         # for msgSet in re.findall(received_mms_pat, self.raw_data):
@@ -294,21 +274,6 @@ def get_location():
 
 def palm_epoch_to_datetime(time):
     return datetime.fromtimestamp(unpack(">I", time)[0] - PALM_EPOCHE_CONV)
-
-def special_name(number):
-    'Gives more descriptive names for special numbers like for Twitter'
-    if '40404' == number: return 'Twitter'
-    elif '466453' == number: return 'Google'
-    elif '32665' == number: return 'Facebook'
-    elif '699268' == number: return 'Wamu'
-    elif '93557' == number: return 'Wells Fargo'
-    elif '246246' == number: return 'AIM Login'
-    elif number.startswith('265'): return 'AIM-%s' % number[-3:]
-    elif number.startswith('32665'): return 'Fbook-%s' % number[-3:]
-    elif number.startswith('46') and len(number) == 6:
-        return 'AIM-%s' % number[-4:]
-    elif number.startswith('0092466'): return 'YIM-%s' % number[-3:]
-    else: return number
 
 if __name__ == '__main__':
     db = MessagesDatabase(sys.argv[1])
